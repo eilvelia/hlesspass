@@ -1,0 +1,5 @@
+.stack-work/
+hlesspass.cabal
+*~
+*.bak
+/*.txt
