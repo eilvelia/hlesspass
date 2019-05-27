@@ -20,6 +20,7 @@ import Password
 import Getpass
 import Copy
 
+ver = "0.0.0"
 appDirName = ".hlesspass"
 configFileName = "config.cfg"
 passwordHashFileName = "pwd"
@@ -107,7 +108,7 @@ options = Options
     &= help "Password length"
   }
   &= program "hlesspass"
-  &= summary "hlesspass"
+  &= summary ("hlesspass - Alternative CLI application for LessPass, v" ++ ver)
   &= helpArg [explicit, name "?", name "h", name "help"]
 
 saveHashMode :: IO ()
