@@ -91,6 +91,14 @@ data Options = Options
   , oNoCopy :: Bool
   , oCounter :: Maybe Int
   , oLength :: Maybe Int
+  , oLowercase :: Bool
+  , oNoLowercase :: Bool
+  , oUppercase :: Bool
+  , oNoUppercase :: Bool
+  , oDigits :: Bool
+  , oNoDigits :: Bool
+  , oSymbols :: Bool
+  , oNoSymbols :: Bool
   }
   deriving (Data, Typeable, Show, Eq)
 
@@ -106,6 +114,14 @@ options = Options
     &= help "Password counter"
   , oLength = def &= explicit &= name "L" &= name "length"
     &= help "Password length"
+  , oLowercase = def &= explicit &= name "l" &= name "lowercase"
+  , oNoLowercase = def &= explicit &= name "nl" &= name "no-lowercase"
+  , oUppercase = def &= explicit &= name "u" &= name "uppercase"
+  , oNoUppercase = def &= explicit &= name "nu" &= name "no-uppercase"
+  , oDigits = def &= explicit &= name "d" &= name "digits"
+  , oNoDigits = def &= explicit &= name "nd" &= name "no-digits"
+  , oSymbols = def &= explicit &= name "s" &= name "symbols"
+  , oNoSymbols = def &= explicit &= name "ns" &= name "no-symbols"
   }
   &= program "hlesspass"
   &= summary ("hlesspass - Alternative CLI application for LessPass, v" ++ ver)
@@ -122,6 +138,14 @@ optionsIntoConfig Options{..} =
   . (\c -> maybe c (\v -> c { cLength = v }) oLength)
   . (\c -> if oCopy then c { cCopy = True } else c)
   . (\c -> if oNoCopy then c { cCopy = False } else c)
+  . (\c -> if oLowercase then c { cLowercase = True } else c)
+  . (\c -> if oNoLowercase then c { cLowercase = False } else c)
+  . (\c -> if oUppercase then c { cUppercase = True } else c)
+  . (\c -> if oNoUppercase then c { cUppercase = False } else c)
+  . (\c -> if oDigits then c { cDigits = True } else c)
+  . (\c -> if oNoDigits then c { cDigits = False } else c)
+  . (\c -> if oSymbols then c { cSymbols = True } else c)
+  . (\c -> if oNoSymbols then c { cSymbols = False } else c)
 
 main :: IO ()
 main = do
