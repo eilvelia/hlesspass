@@ -20,7 +20,7 @@ import Password
 import Getpass
 import Copy
 
-ver = "0.0.0"
+ver = "0.1.0"
 appDirName = ".hlesspass"
 configFileName = "config.cfg"
 passwordHashFileName = "pwd"
