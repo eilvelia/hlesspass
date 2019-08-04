@@ -66,7 +66,7 @@ getMasterPass mhash = do
     Just hash ->
       if hashMasterPass password == hash
         then return password
-        else putStrLn "Wrong master pasword." >> getMasterPass mhash
+        else putStrLn "Wrong master password." >> getMasterPass mhash
     Nothing -> return password
 
 start :: Config -> Maybe PasswordHash -> IO ()
