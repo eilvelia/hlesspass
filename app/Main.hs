@@ -1,92 +1,110 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+-- -fno-cse is necessary because of CmdArgs :(
 {-# OPTIONS_GHC -fno-cse #-}
 
 module Main where
 
--- -fno-cse is necessary because of CmdArgs :(
-
-import Control.Monad (unless)
-import Data.Functor ((<&>), ($>))
+import Data.Functor ((<&>))
 import System.IO (hFlush, stdout)
-import System.Directory
+import System.Directory (createDirectoryIfMissing, doesFileExist)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BS.Char8
 import Data.ByteString (ByteString)
-import System.Console.CmdArgs
+import System.Environment (lookupEnv)
+import System.FilePath ((</>))
+import System.Environment.XDG.BaseDir (getUserConfigDir)
+import qualified Data.Text as T
+import qualified Data.Text.IO as T.IO
+import Data.Text (Text)
+import System.Console.CmdArgs.Implicit
 
-import Config
-import Password
-import Getpass
-import Copy
+import Config (Config(..), defaultConfig, parseConfig)
+import Password (InputData(..), genPassword, hashMasterPassword)
+import PasswordPrompt (promptPassword)
+import Copy (copy)
 
-ver = "0.1.0"
-appDirName = ".hlesspass"
+appName, appVersion, configFileName, passwordHashFileName :: String
+appName = "hlesspass"
+appVersion = "0.2.0"
 configFileName = "config.cfg"
 passwordHashFileName = "pwd"
 
 type PasswordHash = ByteString
 
-getAppDir :: IO String
-getAppDir = do
-  homedir <- getHomeDirectory
-  return $ homedir ++ "/" ++ appDirName
-
-initializeApp :: IO (Config, Maybe PasswordHash)
-initializeApp = do
-  appdir <- getAppDir
-  createDirectoryIfMissing False appdir
-  let configfile = appdir ++ "/" ++ configFileName
-  configExists <- doesFileExist configfile
-  config <-
-    if configExists
-    then readFile configfile <&> parseConfig
-    else writeFile configfile configExample $> defaultConfig
-  let pwdfile = appdir ++ "/" ++ passwordHashFileName
-  pwdfileExists <- doesFileExist pwdfile
-  pwd <-
-    if pwdfileExists
-    then
-      BS.readFile pwdfile <&> \content ->
-        if BS.null content then Nothing else Just content
-    else return Nothing
-  return (config, pwd)
+readAppDir :: IO (Config, Maybe PasswordHash)
+readAppDir = do
+  appConfigDir <- getUserConfigDir appName
+  createDirectoryIfMissing True appConfigDir
+  savedConfig <- getConfig (appConfigDir </> configFileName)
+  savedPwdHash <- getMasterPasswordHash (appConfigDir </> passwordHashFileName)
+  return (savedConfig, savedPwdHash)
+  where
+    getConfig file =
+      doesFileExist file >>= \case
+        True -> parseConfig <$> readFile file
+        -- Write the default config if not existent
+        False -> defaultConfig <$ writeFile file (show defaultConfig)
+    getMasterPasswordHash file =
+      doesFileExist file >>= \case
+        True -> BS.readFile file <&> \content ->
+          if BS.null content then Nothing else Just content
+        False -> return Nothing
 
 writePwdHash :: PasswordHash -> IO ()
-writePwdHash bs = do
-  appdir <- getAppDir
-  BS.writeFile (appdir ++ "/" ++ passwordHashFileName) bs
+writePwdHash hashByteString = do
+  appConfigDir <- getUserConfigDir appName
+  createDirectoryIfMissing True appConfigDir
+  BS.writeFile (appConfigDir </> passwordHashFileName) hashByteString
 
-getMasterPass :: Maybe PasswordHash -> IO String
-getMasterPass mhash = do
-  putStr "Master password: "
-  hFlush stdout
-  password <- getPassword
-  case mhash of
-    Just hash ->
-      if hashMasterPass password == hash
-        then return password
-        else putStrLn "Wrong master password." >> getMasterPass mhash
-    Nothing -> return password
+prompt :: Text -> IO Text
+prompt question = T.IO.putStr question >> hFlush stdout >> T.IO.getLine
 
-start :: Config -> Maybe PasswordHash -> IO ()
-start cfg mhash = do
-  putStr "Site: "
-  hFlush stdout
-  site <- getLine
-  putStr "Login: "
-  hFlush stdout
-  login <- getLine
-  password <- getMasterPass mhash
-  let dat = InputData{..}
-  let generated = genPassword dat cfg
-  if cCopy cfg
-    then copy generated
-    else putStrLn generated
+getSite :: Bool -> IO Text
+getSite True = lookupEnv "HLESSPASS_SITE" >>= \case
+  Just site -> return $ T.pack site
+  Nothing -> prompt "Site: "
+getSite False = prompt "Site: "
 
-data Options = Options
+getLogin :: Bool -> IO Text
+getLogin True = lookupEnv "HLESSPASS_LOGIN" >>= \case
+  Just login -> return $ T.pack login
+  Nothing -> prompt "Login: "
+getLogin False = prompt "Login: "
+
+getMasterPassword :: Maybe PasswordHash -> Bool -> IO Text
+getMasterPassword savedPwdHash useEnv
+  | useEnv = lookupEnv "HLESSPASS_PASSWORD" >>= \case
+    Just masterPassword -> return $ T.pack masterPassword
+    Nothing -> promptMasterPassword
+  | otherwise = promptMasterPassword
+  where
+    promptMasterPassword = do
+      putStr "Master password: "
+      hFlush stdout
+      password <- promptPassword
+      case savedPwdHash of
+        Just hash | hashMasterPassword password == hash -> return password
+        Just _ -> putStrLn "Wrong master password." >> promptMasterPassword
+        Nothing -> return password
+
+start :: Config -> Maybe PasswordHash -> Bool -> IO ()
+start cfg savedPwdHash useEnv = do
+  site <- getSite useEnv
+  login <- getLogin useEnv
+  password <- getMasterPassword savedPwdHash useEnv
+  let generated = genPassword InputData{..} cfg
+  if cCopy cfg then copy generated else putStrLn generated
+
+saveHashMode :: IO ()
+saveHashMode = do
+  password <- getMasterPassword Nothing False
+  writePwdHash $ hashMasterPassword password
+
+data CliOptions = CliOptions
   { oSaveHash :: Bool
   , oNoCheck :: Bool
+  , oEnv :: Bool
   , oCopy :: Bool
   , oNoCopy :: Bool
   , oCounter :: Maybe Int
@@ -102,10 +120,13 @@ data Options = Options
   }
   deriving (Data, Typeable, Show, Eq)
 
-options = Options
+options :: CliOptions
+options = CliOptions
   { oSaveHash = def &= explicit &= name "save-hash"
   , oNoCheck = def &= explicit &= name "no-check"
     &= help "Don't compare hashes"
+  , oEnv = def &= explicit &= name "env"
+    &= help "Read the HLESSPASS_{SITE,LOGIN,PASSWORD} env variables"
   , oCopy = def &= explicit &= name "c" &= name "copy"
     &= help "Copy to clipboard"
   , oNoCopy = def &= explicit &= name "no-copy"
@@ -124,16 +145,12 @@ options = Options
   , oNoSymbols = def &= explicit &= name "ns" &= name "no-symbols"
   }
   &= program "hlesspass"
-  &= summary ("hlesspass - Alternative CLI application for LessPass, v" ++ ver)
+  &= summary ("hlesspass - Alternative CLI application for LessPass, v" ++ appVersion)
   &= helpArg [explicit, name "?", name "h", name "help"]
+  &= versionArg [explicit, name "version"]
 
-saveHashMode :: IO ()
-saveHashMode = do
-  password <- getMasterPass Nothing
-  writePwdHash $ hashMasterPass password
-
-optionsIntoConfig :: Options -> Config -> Config
-optionsIntoConfig Options{..} =
+optionsIntoConfig :: CliOptions -> Config -> Config
+optionsIntoConfig CliOptions{..} =
     (\c -> maybe c (\v -> c { cCounter = v }) oCounter)
   . (\c -> maybe c (\v -> c { cLength = v }) oLength)
   . (\c -> if oCopy then c { cCopy = True } else c)
@@ -149,12 +166,10 @@ optionsIntoConfig Options{..} =
 
 main :: IO ()
 main = do
-  (cfg, mhash) <- initializeApp
-  Options{..} <- cmdArgs options
-  -- print Options{..}
+  (savedConfig, savedPwdHash) <- readAppDir
+  CliOptions{..} <- cmdArgs options
   if oSaveHash then
     saveHashMode
-  else
-    let cfg' = optionsIntoConfig Options{..} cfg in
-    let mhash' = if oNoCheck then Nothing else mhash in
-    start cfg' mhash'
+  else do
+    let config = optionsIntoConfig CliOptions{..} savedConfig
+    start config (if oNoCheck then Nothing else savedPwdHash) oEnv

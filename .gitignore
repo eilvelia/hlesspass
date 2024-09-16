@@ -1,5 +1,5 @@
 .stack-work/
-hlesspass.cabal
+dist-newstyle/
 *~
 *.bak
 /*.txt

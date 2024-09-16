@@ -2,27 +2,21 @@
 
 Alternative CLI application for [LessPass](https://lesspass.com).
 
-## Build & install
+## Installation
 
-```console
-$ stack install
-```
-
-Run tests:
-
-```console
-$ stack test
-```
+Clone the repository and build the project either via cabal (`cabal build`,
+see also `cabal --help`) or nix.
 
 ## Usage
 
 ```console
-$ hlesspass [options]
-$ hlesspass --help
+$ hlesspass [OPTIONS]
 ```
 
-The app has its own configuration file in `~/.hlesspass/config.cfg`.\
-The config looks like this:
+See `hlesspass --help`.
+
+The app has its own configuration file in `$XDG_CONFIG_HOME/hlesspass/config.cfg`
+(where `$XDG_CONFIG_HOME` defaults to `~/.config`). The config looks like this:
 
 ```ini
 lowercase=yes
@@ -34,9 +28,16 @@ counter=1
 copy=no
 ```
 
-It can also store hash[*](#note1) of the password in the `~/.hlesspass/pwd` file so that you can't make a mistake when entering your password.\
-Launch the program with the `--save-hash` option and enter the password. On next launch it will always check if you wrote a correct password. `--no-check` can be used to disable the check.
+It can also locally store hash[^1] of the master password in the
+`$XDG_CONFIG_HOME/hlesspass/pwd` file to prevent typos. Launch `hlesspass` with
+the `--save-hash` option and enter the password. On subsequent runs it'll check
+that you wrote a correct password. `--no-check` can be used to disable this
+check.
 
-<a name="note1">*</a> it uses the first 3 bytes of pbkdf2 (hmac sha256, 2 iterations) hash
+[^1]: the first 24 bits of pbkdf2 (hmac sha256, 2 iterations) hash are used
 
 The main LessPass algorithm uses pbkdf2_sha256 with 100'000 iterations.
+
+## License
+
+Copyright © 2019 eilvelia, [MIT License](./LICENSE).

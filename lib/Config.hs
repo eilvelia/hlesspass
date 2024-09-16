@@ -1,23 +1,8 @@
-module Config (configExample, Config(..), defaultConfig, parseConfig) where
+{-# LANGUAGE RecordWildCards #-}
 
-import Data.Bifunctor (bimap)
+module Config (Config(..), defaultConfig, parseConfig) where
 
--- inefficient
-strip, lstrip, rstrip :: String -> String
-strip = lstrip . rstrip
-lstrip = dropWhile (`elem` " \t\r\n")
-rstrip = reverse . lstrip . reverse
-
-configExample :: String
-configExample = unlines [
-  "lowercase=yes",
-  "uppercase=yes",
-  "digits=yes",
-  "symbols=yes",
-  "length=16",
-  "counter=1",
-  "copy=no"
-  ]
+import Data.Bifunctor (second)
 
 data Config = Config {
   cLowercase :: Bool,
@@ -27,8 +12,25 @@ data Config = Config {
   cLength :: Int,
   cCounter :: Int,
   cCopy :: Bool
-} deriving (Eq, Show)
+} deriving (Eq)
 
+instance Show Config where
+  show Config{..} =
+    unlines [
+      "lowercase=" ++ showBool cLowercase,
+      "uppercase=" ++ showBool cUppercase,
+      "digits=" ++ showBool cDigits,
+      "symbols=" ++ showBool cSymbols,
+      "length=" ++ showInt cLength,
+      "counter=" ++ showInt cCounter,
+      "copy=" ++ showBool cCopy
+    ]
+    where
+      showBool True = "yes"
+      showBool False = "no"
+      showInt = show :: Int -> String
+
+defaultConfig :: Config
 defaultConfig = Config {
   cLowercase = True,
   cUppercase = True,
@@ -39,30 +41,32 @@ defaultConfig = Config {
   cCopy = False
 }
 
-parseBool :: String -> Bool
-parseBool "yes" = True
-parseBool _ = False
+parseBoolValue :: String -> Bool
+parseBoolValue "yes" = True
+parseBoolValue "true" = True
+parseBoolValue "no" = False
+parseBoolValue "false" = False
+parseBoolValue "" = False
+parseBoolValue _ = error "Invalid bool value"
 
-parseInt :: String -> Int
-parseInt str =
+parseIntValue :: String -> Int
+parseIntValue str =
   case reads str :: [(Int, String)] of
     [(x, _)] -> x
     _ -> error $ "Invalid int (" ++ str ++ ")"
 
-parseNewField :: Config -> String -> Config
-parseNewField old l | l' == "" || elem (head l') "#;" = old where l' = strip l
-parseNewField old line =
-  case fieldName of
-    "lowercase" -> old { cLowercase = parseBool v }
-    "uppercase" -> old { cUppercase = parseBool v }
-    "digits" -> old { cDigits = parseBool v }
-    "symbols" -> old { cSymbols = parseBool v }
-    "length" -> old { cLength = parseInt v }
-    "counter" -> old { cCounter = parseInt v }
-    "copy" -> old { cCopy = parseBool v }
-    _ -> error $ "Invalid config line: " ++ line
+parseField :: Config -> String -> Config
+parseField old line = if head key `elem` "#;" then old else forKey key
   where
-    (fieldName, v) = bimap strip (strip . tail) $ span (/= '=') line
+    (key, value) = second tail . span (/= '=') . filter (/= ' ') $ line
+    forKey "lowercase" = old { cLowercase = parseBoolValue value }
+    forKey "uppercase" = old { cUppercase = parseBoolValue value }
+    forKey "digits" = old { cDigits = parseBoolValue value }
+    forKey "symbols" = old { cSymbols = parseBoolValue value }
+    forKey "length" = old { cLength = parseIntValue value }
+    forKey "counter" = old { cCounter = parseIntValue value }
+    forKey "copy" = old { cCopy = parseBoolValue value }
+    forKey _ = error $ "Invalid config line: " ++ line
 
 parseConfig :: String -> Config
-parseConfig str = foldl parseNewField defaultConfig (lines str)
+parseConfig str = foldl parseField defaultConfig (lines str)

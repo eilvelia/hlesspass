@@ -1,8 +1,10 @@
 module Copy (copy) where
 
-import System.Process
+import System.Process (runInteractiveProcess)
 import System.Info (os)
 import System.IO (hPutStr, hClose)
+import System.Directory (findExecutable)
+import Data.Maybe (isJust)
 
 exec :: String -> [String] -> String -> IO ()
 exec bin args text = do
@@ -14,7 +16,12 @@ copyMac :: String -> IO ()
 copyMac = exec "pbcopy" []
 
 copyLinux :: String -> IO ()
-copyLinux = exec "xclip" ["-selection", "clipboard"]
+copyLinux content = do
+  wlCopyPath <- findExecutable "wl-copy"
+  if isJust wlCopyPath then
+    exec "wl-copy" [] content
+  else
+    exec "xclip" ["-selection", "clipboard"] content
 
 copyWindows :: String -> IO ()
 copyWindows = exec "clip" []
